@@ -262,7 +262,7 @@ decl_module! {
 				//DataAvailable::put(true);
 				} else {
 					debug::info!("executing signed extrinsic");
-					Self::signed_submit_number(block_number)
+					Self::signed_submit_agent()
 					//if let Err(e) = result { debug::error!("Error: {:?}", e); }
 			};
 		}
@@ -466,6 +466,41 @@ impl<T: Trait> Module<T> {
 		// Next we fully read the response body and collect it to a vector of bytes.
 		Ok(response.body().collect::<Vec<u8>>())
 	}
+
+	fn signed_submit_agent() -> Result<(), Error<T>> {
+		let signer = Signer::<T, T::AuthorityId>::all_accounts();
+		if !signer.can_sign() {
+			debug::error!("No local account available -- boi"); // HELP HERE
+			return Err(<Error<T>>::SignedSubmitNumberError);
+		}
+		let s_info = StorageValueRef::persistent(b"offchain-demo::gh-info");
+		if let Some(Some(gh_info)) = s_info.get::<GithubInfo>() {
+			debug::info!("cached gh-info in submit function: {:?}", gh_info);
+			let agent_y = gh_info.login;
+			let results = signer.send_signed_transaction(|_acct| {
+				Call::submit_agent_signed(agent_y.clone())
+			});
+			for (acc, res) in &results {
+				match res {
+					Ok(()) => {
+						debug::native::info!(
+							"off-chain send_signed: acc: {:?}| number: {:#?}",
+							acc.id,
+							agent_y.clone()
+						);
+					}
+					Err(e) => {
+						debug::error!("[{:?}] Failed in signed_submit_number: {:?}", acc.id, e);
+						return Err(<Error<T>>::SignedSubmitNumberError);
+					}
+				};
+			}
+		};
+
+		Ok(())
+	}
+
+
 
 	fn signed_submit_number(block_number: T::BlockNumber) -> Result<(), Error<T>> {
 		let signer = Signer::<T, T::AuthorityId>::all_accounts();
